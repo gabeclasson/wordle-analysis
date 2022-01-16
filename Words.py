@@ -52,7 +52,7 @@ class Words:
     def word_relative_frequency(self, letter, num=1):
         return self.word_frequency(letter, num) / self.size
 
-    # The expected portion of words that will be eliminated by guessing this word. This is not a true, mathematica "expected value" because it fails to account for overlap. 
+    # The expected portion of words that will be eliminated by guessing this word. 
     def expected_elimination(self, word):
         expected_elimination = 0
 
@@ -66,16 +66,16 @@ class Words:
             portion_removed_green = 1 - probability_green
             expected_elimination += probability_green * portion_removed_green
 
-            if letter not in word[:position]: 
-                # When a letter is yellow, you will remove all words that do not contain that letter
-                probability_yellow = rel_freq_tot - rel_freq_pos
-                portion_removed_yellow = 1 - rel_freq_tot
-                expected_elimination += probability_yellow * portion_removed_yellow
+            # When a letter is yellow, you will remove all words that do not contain that letter
+            count = word[:position + 1].count(letter)
+            probability_yellow = self.word_relative_frequency(letter, count) - probability_green
+            portion_removed_yellow = 1 - rel_freq_tot
+            expected_elimination += probability_yellow * portion_removed_yellow
 
-                # When a letter is gray, you will remove all words that contain that letter
-                portion_removed_gray = rel_freq_tot
-                probability_gray = 1 - rel_freq_tot
-                expected_elimination += probability_gray * portion_removed_gray
+            # When a letter is gray, you will remove all words that contain that letter
+            portion_removed_gray = probability_green + probability_yellow
+            probability_gray = 1 - portion_removed_gray
+            expected_elimination += probability_gray * portion_removed_gray
 
         return expected_elimination
 
