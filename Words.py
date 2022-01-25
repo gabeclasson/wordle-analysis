@@ -6,60 +6,72 @@ from functools import cmp_to_key
 
 
 class Words: 
-    def __init__(self, word_list, word_length, hard_mode=False):
+    def __init__(self, possible_solutions, possible_guesses, word_length, hard_mode=False):
         self.word_length = word_length
-        self.frequency_position = [ {letter: 0 for letter in ascii_lowercase} for i in range(word_length) ]
-        self.frequency_words = [ {letter: 0 for letter in ascii_lowercase} for i in range(word_length) ]
-        self.hard_mode = False
+        self.frequency_by_position = [ {letter: 0 for letter in ascii_lowercase} for i in range(word_length) ]
+        self.frequency_among_solutions = [ {letter: 0 for letter in ascii_lowercase} for i in range(word_length) ]
+        self.hard_mode = hard_mode
+        self.possible_guesses = possible_guesses[:]
         
-        word_list = list(filter(lambda word: len(word) == word_length, word_list))
-        word_list = list(map(lambda str: str.lower(), word_list))
-        word_list = list(set(word_list))
-        self.original_word_list = word_list[:]
-        self.word_list = []
+        possible_solutions = list(filter(lambda word: len(word) == word_length, possible_solutions))
+        possible_solutions = list(map(lambda str: str.lower(), possible_solutions))
+        possible_solutions = list(set(possible_solutions))
+        self.possible_solutions = []
         self.size = 0
-        for word in word_list:
-            self.add_word(word)
+        for word in possible_solutions:
+            self.add_possible_solution(word)
 
-    def add_word(self, word):
+    @classmethod
+    def default_config(cls, hard_mode=False):
+        word_file = open("wordle_words.txt")
+        words = word_file.readlines()
+        words = [word[:-1] for word in words]
+        possible_solutions = [word for word in words if word[-1] != "s"]
+        return cls(possible_solutions, words, 5, hard_mode=hard_mode)
+
+
+    def add_possible_solution(self, word):
         assert len(word) == self.word_length
-        self.word_list.append(word)
+        self.possible_solutions.append(word)
         for position, letter in enumerate(word):
-            self.frequency_position[position][letter] += 1
-            self.frequency_words[word[:position].count(letter)][letter] += 1
+            self.frequency_by_position[position][letter] += 1
+            self.frequency_among_solutions[word[:position].count(letter)][letter] += 1
         self.size += 1      
 
-    def remove_word(self, word):
-        self.word_list.remove(word)
+    def remove_possible_solution(self, word):
+        self.possible_solutions.remove(word)
         for position, letter in enumerate(word):
-            self.frequency_position[position][letter] -= 1
-            self.frequency_words[word[:position].count(letter)][letter] -= 1 
+            self.frequency_by_position[position][letter] -= 1
+            self.frequency_among_solutions[word[:position].count(letter)][letter] -= 1 
         self.size -= 1
 
-    # The number of words in the corpus that have a letter in a particular position
-    def position_frequency(self, letter, position):
-        return self.frequency_position[position][letter]
+    def remove_guess(self, word): 
+        self.possible_guesses.remove(word)
 
-    # The number of words in which num instances of a given letter appear
-    def word_frequency(self, letter, num=1): 
-        return self.frequency_words[num - 1][letter]
+    # The number of solutions in the corpus that have a letter in a particular position
+    def letter_frequency_by_position(self, letter, position):
+        return self.frequency_by_position[position][letter]
 
-    # The portion of words in the corpus that have a letter in a particular position
-    def position_relative_frequency(self, letter, position):
-        return self.position_frequency(letter, position) / self.size
+    # The number of solutions in which num instances of a given letter appear
+    def letter_frequency_among_solutions(self, letter, num=1): 
+        return self.frequency_among_solutions[num - 1][letter]
 
-    # The portion of words in the corpus in which num instances of a given letter appear
-    def word_relative_frequency(self, letter, num=1):
-        return self.word_frequency(letter, num) / self.size
+    # The portion of solutions in the corpus that have a letter in a particular position
+    def letter_relative_frequency_by_position(self, letter, position):
+        return self.letter_frequency_by_position(letter, position) / self.size
 
-    # The expected portion of words that will be eliminated by guessing this word. 
+    # The portion of solutions in the corpus in which num instances of a given letter appear
+    def letter_relative_frequency_among_solutions(self, letter, num=1):
+        return self.letter_frequency_among_solutions(letter, num) / self.size
+
+    # The expected portion of solutions that will be eliminated by guessing this word. 
     def expected_elimination(self, word):
         expected_elimination = 0
 
         # Duplicate letters in a word increase the green expected eliminations, but not the yellow and 
         for position, letter in enumerate(word): 
-            rel_freq_pos = self.position_relative_frequency(letter, position)
-            rel_freq_tot = self.word_relative_frequency(letter)
+            rel_freq_pos = self.letter_relative_frequency_by_position(letter, position)
+            rel_freq_tot = self.letter_relative_frequency_among_solutions(letter)
 
             # When a letter is green, you will remove all words that do not have a letter in that position
             probability_green = rel_freq_pos
@@ -68,7 +80,7 @@ class Words:
 
             # When a letter is yellow, you will remove all words that do not contain that letter
             count = word[:position + 1].count(letter)
-            probability_yellow = self.word_relative_frequency(letter, count) - probability_green
+            probability_yellow = self.letter_relative_frequency_among_solutions(letter, count) - probability_green
             portion_removed_yellow = 1 - rel_freq_tot
             expected_elimination += probability_yellow * portion_removed_yellow
 
@@ -80,51 +92,48 @@ class Words:
         return expected_elimination
 
     def best_guess_ee(self):
-        if self.hard_mode: 
-            return max(self.original_word_list, key=lambda word: self.expected_elimination(word))
-        else: 
-            return max(self.word_list, key=lambda word: self.expected_elimination(word))
+        return max(self.possible_guesses, key=lambda word: self.expected_elimination(word))
 
     # gives the average number of "hits" (greens and yellows) that a particular guess yields
     def average_hits(self, guess):
         hits = 0
         for position, letter in enumerate(guess):
             count = guess[:position + 1].count(letter)
-            hits += self.word_frequency(letter, count)
+            hits += self.letter_frequency_among_solutions(letter, count)
         return hits / self.size      
 
-    # Gives a tuple containing a word and its average "hits" (greens and yellows)
+    # Gives a tuple containing a guess and its average "hits" (greens and yellows)
     def max_hits(self):
-        tuples = [(word, self.average_hits(word)) for word in self.word_list]
+        tuples = [(word, self.average_hits(word)) for word in self.possible_guesses]
         return max(tuples, key=self.tuple_sort_key(tie_break_greens=True))
 
-    def sorted_words_hits(self, length=100, descending=True):
-        tuples = [(word, self.average_hits(word)) for word in self.word_list]
+    def sorted_guesses_hits(self, length=100, descending=True):
+        tuples = [(word, self.average_hits(word)) for word in self.possible_guesses]
         return sorted(tuples, reverse=descending, key=self.tuple_sort_key(tie_break_greens=True))[:length]
 
     def average_greens(self, guess):
         greens = 0
         for pos, letter in enumerate(guess): 
-            greens += self.position_frequency(letter, pos)
+            greens += self.letter_frequency_by_position(letter, pos)
         return greens/self.size
 
     def max_greens(self):
-        tuples = [(word, self.average_greens(word)) for word in self.word_list]
+        tuples = [(word, self.average_greens(word)) for word in self.possible_guesses]
         return max(tuples, key=self.tuple_sort_key(tie_break_greens=False))
 
-    def sorted_words_greens(self, length=100, descending=True):
-        tuples = [(word, self.average_greens(word)) for word in self.word_list]
+    def sorted_potential_guesses_greens(self, length=100, descending=True):
+        tuples = [(word, self.average_greens(word)) for word in self.possible_guesses]
         return sorted(tuples, reverse=descending, key=self.tuple_sort_key(tie_break_greens=False))[:length]
 
     def average_yellows(self, guess):
         return self.average_hits(guess) - self.average_greens(guess)
 
     def max_yellows(self):
-        tuples = [(word, self.average_yellows(word)) for word in self.word_list]
+        tuples = [(word, self.average_yellows(word)) for word in self.possible_guesses]
         return max(tuples, key=self.tuple_sort_key(tie_break_greens=True))
 
-    def sorted_words_yellows(self, length=100, descending=True):
-        tuples = [(word, self.average_yellows(word)) for word in self.word_list]
+    def sorted_potential_guesses_yellows(self, length=100, descending=True):
+        tuples = [(word, self.average_yellows(word)) for word in self.possible_guesses]
         return sorted(tuples, reverse=descending, key=self.tuple_sort_key(tie_break_greens=True))[:length]
 
     # Gives the average numbers of greens and yellows (g, y) that this guess gives when compared to all other words in the cohort. 
@@ -151,25 +160,30 @@ class Words:
         
         return compare_words
 
-    # Sorts words by their weighted average result
-    def sorted_words(self, green=1, yellow=1, length=100, descending=True, tie_break_greens = True): 
-        tuples = [(word, self.weighted_average_result(word, green, yellow)) for word in self.word_list]
+    # Sorts guesses by their weighted average result
+    def sorted_potential_guesses(self, green=1, yellow=1, length=100, descending=True, tie_break_greens = True): 
+        tuples = [(word, self.weighted_average_result(word, green, yellow)) for word in self.possible_guesses]
         return sorted(tuples, reverse=descending, key=self.tuple_sort_key(tie_break_greens))[:length]
 
     # Eliminates from the list of words every word that does not conform to the result
     def eliminate(self, guess, result):
         assert len(guess) == self.word_length and len(result) == self.word_length, "Result string must match word length."
-        for test_word in self.word_list[:]:
+        for test_word in self.possible_solutions[:]:
             if wordle_result(guess, test_word) != result: 
-                self.remove_word(test_word)
+                self.remove_possible_solution(test_word)
+        if self.hard_mode: 
+            for test_guess in self.possible_guesses[:]:
+                if valid_guess_hard_mode(test_guess, guess, result): 
+                    self.possible_guesses.remove(test_guess)
+
     
     # Gives a list of tuples (letter, relative_frequency), where relative_frequency is the relative frequency of each letter in the given position
     def sorted_letters_by_position(self, position, descending=True):
-        tuples = [(letter, self.position_relative_frequency(letter, position)) for letter in ascii_lowercase]
+        tuples = [(letter, self.letter_relative_frequency_by_position(letter, position)) for letter in ascii_lowercase]
         return sorted(tuples, reverse=descending, key=lambda tup: tup[1])
 
     def sorted_letters_by_count(self, count, descending=True):
-        tuples = [(letter, self.word_relative_frequency(letter, count)) for letter in ascii_lowercase]
+        tuples = [(letter, self.letter_relative_frequency_among_solutions(letter, count)) for letter in ascii_lowercase]
         return sorted(tuples, reverse=descending, key=lambda tup: tup[1])
 
     # Takes an iterable of iterables and writes row by row, column by column, tab separated to file
@@ -188,11 +202,8 @@ class Words:
             self.write_table_to_file(f"word_frequencies_count_{num}.txt", self.sorted_letters_by_count(num))
 
     def export_word_averages(self):  
-        self.write_table_to_file(f"words_average_greens.txt", self.sorted_words_greens(length=100000000000))
-        self.write_table_to_file(f"words_average_yellows.txt", self.sorted_words_yellows(length=100000000000))
-        self.write_table_to_file(f"words_average_hits.txt", self.sorted_words_hits(length=100000000000))
+        self.write_table_to_file(f"words_average_greens.txt", self.sorted_potential_guesses_greens(length=100000000000))
+        self.write_table_to_file(f"words_average_yellows.txt", self.sorted_potential_guesses_yellows(length=100000000000))
+        self.write_table_to_file(f"words_average_hits.txt", self.sorted_guesses_hits(length=100000000000))
 
-word_file = open("wordle_words.txt")
-words = word_file.readlines()
-words = [word[:-1] for word in words]
-words = Words(words, 5)
+words = Words.default_config()

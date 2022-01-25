@@ -39,9 +39,9 @@ for turn in range(6):
         print("Congratulations, you won! ")
         print("Exiting Wordle solver. ")
         sys.exit()
-    before_count = len(words.word_list)
+    before_count = len(words.possible_solutions)
     words.eliminate(guess, result)
-    eliminated_count = before_count - len(words.word_list)
+    eliminated_count = before_count - len(words.possible_solutions)
     print(f"Eliminated {eliminated_count} word{'' if eliminated_count == 1 else 's'}, or {eliminated_count/before_count * 100}% of all words. ")
     print()
 

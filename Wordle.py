@@ -1,3 +1,6 @@
+import enum
+import Hint
+
 def wordle_result(guess, true_word):
     true_word_list = list(true_word)
 
@@ -13,6 +16,20 @@ def wordle_result(guess, true_word):
             true_word_list.remove(guess_letter)
 
     return "".join(result)
+
+def valid_guess_hard_mode(test_guess, guess, result):
+    test_guess_letters = list(test_guess)
+    for test_letter, letter, color in zip(test_guess, guess, result):
+        if color == "g":
+            if test_letter != letter: 
+                return False
+            test_guess_letters.remove(letter)
+        elif color == "y":
+            if letter not in test_guess_letters:
+                return False
+            test_guess_letters.remove(letter)
+    return True
+        
         
 def wordle_metric(guess, true_word):
     guess = list(guess)
